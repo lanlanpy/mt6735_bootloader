@@ -1,0 +1,59 @@
+LOCAL_PATH := $(call my-dir)
+PRELOADER_ROOT_DIR := $(PWD)
+
+ifdef PRELOADER_TARGET_PRODUCT
+    PRELOADER_DIR := $(LOCAL_PATH)
+    PRELOADER_OUT ?= $(if $(filter /% ~%,$(TARGET_OUT_INTERMEDIATES)),,$(PRELOADER_ROOT_DIR)/)$(TARGET_OUT_INTERMEDIATES)/PRELOADER_OBJ
+  ifdef PL_MODE
+    INSTALLED_PRELOADER_TARGET := $(PRODUCT_OUT)/preloader_$(PRELOADER_TARGET_PRODUCT).bin
+    BUILT_PRELOADER_TARGET := $(PRELOADER_OUT)/bin/preloader_$(PRELOADER_TARGET_PRODUCT)_$(PL_MODE).bin
+  else
+    INSTALLED_PRELOADER_TARGET := $(PRODUCT_OUT)/preloader_$(PRELOADER_TARGET_PRODUCT).bin
+    BUILT_PRELOADER_TARGET := $(PRELOADER_OUT)/bin/preloader_$(PRELOADER_TARGET_PRODUCT).bin
+  endif
+    ifeq ($(LK_CROSS_COMPILE),)
+    ifeq ($(TARGET_ARCH), arm)
+#      PRELOADER_CROSS_COMPILE := $(PRELOADER_ROOT_DIR)/$(TARGET_TOOLS_PREFIX)
+    else ifeq ($(TARGET_2ND_ARCH), arm)
+#      PRELOADER_CROSS_COMPILE := $(PRELOADER_ROOT_DIR)/$($(TARGET_2ND_ARCH_VAR_PREFIX)TARGET_TOOLS_PREFIX)
+    endif
+    endif
+    PRELOADER_MAKE_OPTION := $(if $(SHOW_COMMANDS),,-s) -f Makefile $(if $(PRELOADER_CROSS_COMPILE),CROSS_COMPILE=$(PRELOADER_CROSS_COMPILE)) PRELOADER_OUT=$(PRELOADER_OUT) MTK_PROJECT=$(PRELOADER_TARGET_PRODUCT) TOOL_PATH=$(PRELOADER_ROOT_DIR)/device/mediatek/build/build/tools ROOTDIR=$(PRELOADER_ROOT_DIR)
+
+  ifeq ($(wildcard $(TARGET_PREBUILT_PRELOADER)),)
+$(BUILT_PRELOADER_TARGET): $(MTK_PROJECT_CONFIG) FORCE
+	$(hide) mkdir -p $(dir $@)
+	$(MAKE) -C $(PRELOADER_DIR) $(PRELOADER_MAKE_OPTION)
+
+$(TARGET_PREBUILT_PRELOADER): $(BUILT_PRELOADER_TARGET) | $(ACP)
+	$(copy-file-to-target)
+
+  else
+    BUILT_PRELOADER_TARGET := $(TARGET_PREBUILT_PRELOADER)
+  endif#TARGET_PREBUILT_PRELOADER
+
+  ifneq ($(INSTALLED_PRELOADER_TARGET),$(BUILT_PRELOADER_TARGET))
+$(INSTALLED_PRELOADER_TARGET): $(BUILT_PRELOADER_TARGET) | $(ACP)
+	$(copy-file-to-target)
+
+  endif
+
+.PHONY: preloader save-preloader %-preloader clean-preloader
+droidcore: preloader
+all_modules: preloader
+preloader: $(INSTALLED_PRELOADER_TARGET)
+pl: $(INSTALLED_PRELOADER_TARGET)
+save-preloader: $(TARGET_PREBUILT_PRELOADER)
+
+%-preloader:
+	$(MAKE) -C $(PRELOADER_DIR) $(PRELOADER_MAKE_OPTION) $(patsubst %-preloader,%,$@)
+
+clean-preloader:
+	$(hide) rm -rf $(INSTALLED_PRELOADER_TARGET) $(PRELOADER_OUT)
+
+droid: check-pl-config
+check-mtk-config: check-pl-config
+check-pl-config:
+	-python device/mediatek/build/build/tools/check_kernel_config.py -c $(MTK_TARGET_PROJECT_FOLDER)/ProjectConfig.mk -b bootable/bootloader/preloader/custom/$(PRELOADER_TARGET_PRODUCT)/$(PRELOADER_TARGET_PRODUCT).mk -p $(MTK_PROJECT_NAME)
+
+endif#PRELOADER_TARGET_PRODUCT
