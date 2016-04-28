@@ -1,0 +1,85 @@
+ARM启动流程如下：
+
+	BootRom  --->   preloader ----->  lk ----->  kernel
+	
+一. BootRom启动
+
+1、 	通过RESET模式启动ARM核
+2、	初始化外部的SRAM
+3、	初始化外部NAND/EMMC
+4、	把preloader从NAND/EMMC中取出导入SRAM中
+5、	跳转执行preloader
+
+二. preloader
+
+1、	建立c执行环境
+2、	初始化一些外部硬件(Timer，clock，UART，外部DRAM)  
+3、	安全认证(MTK自己的认证)
+4、	跳转执行lk
+
+2.1 进入preloader建立c环境
+
+——————bootable\bootloader\preloader\platform\mt6735\link_descriptor.ld
+	
+ENTRY(_start)   //ld链接文件，链接要执行的文件
+
+——————bootable\bootloader\preloader\platform\mt6735\src\init\init.s
+
+.globl _start	//汇编语言
+_start:
+    b resethandler
+... ... ...
+resethandler:		//建立c执行环境
+    LDR r6, =bldr_args_addr
+    STR r4, [r6]
+    ... ... ...
+entry :
+    LDR r0, =bldr_args_addr
+    B   main		//跳转执行main操作
+
+2.2 进入c环境，做基本初始化
+
+——————bootable\bootloader\preloader\platform\mt6735\src\core\main.c
+
+1、 得到bootloader的信息  
+	/* get the bldr argument */
+	bldr_param = (bl_param_t *)*arg;
+    
+2、 UART初始化
+	mtk_uart_init(UART_SRC_CLK_FRQ, CFG_LOG_BAUDRATE);	//晶振时钟频率，UART波特率(一般为921600)
+								//所以打印MTK的串口需要设定波特率为921600
+
+3、 初始化Timer，clock，看门狗，
+	bldr_pre_process();	
+	bldr_wait_forever();
+
+4、 模式检测
+	bldr_handshake(&handler);	//检测模式，NORMAL_BOOT、FACTORY_BOOT等
+	
+5、 trustzone初始化(如果有这个硬件的话)
+	#if CFG_ATF_SUPPORT
+		trustzone_pre_init();
+	#endif
+
+6、 导入lk到DRAM中
+	bldr_load_images(&jump_addr);
+
+7、 从preloader向lk传递参数
+	bldr_post_process();
+
+8、 跳转执行lk
+	bldr_jump64(jump_addr, (u32)&bootarg, sizeof(boot_arg_t));
+	
+三. lk
+
+1、	从preloader得到参数
+2、	使能MMU高速缓存
+3、	使能外围设备
+4、	设置Boot模式
+5、	导入kernel到DRAM中
+6、	跳转到kernel执行
+
+
+
+
+	
